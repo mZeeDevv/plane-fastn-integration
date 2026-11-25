@@ -5,13 +5,17 @@ This fork of [Plane](https://github.com/makeplane/plane) embeds the [fastn](http
 ## Using it
 
 1. Open **Workspace settings** (the workspace menu in the top-left corner, then **Settings**).
-2. Under **Developer**, choose **Integrations**. Every integration your fastn org offers is listed as a card.
+2. Under **Developer**, choose **Integrations**. Every integration your fastn org offers is listed as a card, with whether it's connected.
 
    ![Integrations page in Plane workspace settings](docs/fastn/integrations-page.jpg)
 
-3. Click **Connect** on a card. Plane opens fastn's connect step in a dialog: add (or pick) the account for the app, keep the setup **Active**, and click **Connect**.
+3. Click **Connect** on a card. fastn asks for the app's account: for GitHub, click **Authorize**, sign in to GitHub in the window that opens and approve access.
 
-   ![Connecting GitHub → Plane Issues Sync](docs/fastn/connect-dialog.jpg)
+   ![Connecting GitHub](docs/fastn/connect-dialog.jpg)
+
+   Click **Manage** on a connected integration to see its setup, the workflows it runs and recent activity.
+
+   ![The Plane ⇄ Slack integration's page](docs/fastn/app-page.jpg)
 
 4. Once connected, the integration runs on fastn's side. GitHub issues show up as Plane work items, Plane changes post to Slack, and so on, depending on the integration. With **Plane ⇄ Slack**, status changes in Plane post to your Slack channel, and `@Fastn create <title>` in Slack creates a Plane work item:
 
@@ -30,15 +34,15 @@ Settings > Integrations  --POST-->  /api/workspaces/<slug>/fastn/      POST /api
                                       |  fastn customer on first use
                                       |  and saves its Plane connection --> POST /api/v1/connections
                          <-- iframe URL with a short-lived emb_ token
-<iframe> fastn hub (cards view)
-  Connect --fastn:open--> Plane opens a dialog with the connect step
-  Close   --fastn:close-> Plane closes it and refreshes the cards
+<iframe> fastn hub (Plane Dark config + theme)
+  Connect, Manage and setups all open inside the frame
 ```
 
 - **One fastn customer per Plane workspace.** It's created on the first token request (`createIfMissing`), keyed by the workspace id.
 - **The fastn API key never reaches the browser.** Plane's API mints a short-lived embed token (8 hours, refreshed inside the frame), and the page only receives the iframe URL.
 - **Plane connects itself.** The fastn integrations mark the Plane app as the partner's own product, so the end user only connects the other app. On first load, Plane creates a workspace API token labelled `fastn-integration` and saves it in fastn as that customer's Plane connection.
 - **The look comes from fastn.** The page uses a fastn iframe config ("Plane Dark") and theme tokens, so the hub matches Plane's dark UI. Restyle it in fastn's widget builder.
+- **Fixed link for local testing.** Setting `VITE_FASTN_IFRAME_URL` in `apps/web/.env` makes the page frame that exact link instead. Its `emb_` token expires within 8 hours, so it's for local use only; `.env` is git-ignored.
 
 ## Setup
 
@@ -77,7 +81,7 @@ The `.env` files are git-ignored; keep the API key out of the repo.
 | --- | --- |
 | `apps/api/plane/app/views/fastn/base.py` | New: the embed-token endpoint and the Plane connection setup |
 | `apps/api/plane/app/urls/webhook.py`, `apps/api/plane/app/views/__init__.py` | Route and export for the endpoint |
-| `apps/web/app/(all)/[workspaceSlug]/(settings)/settings/(workspace)/integrations/page.tsx` | The Integrations page: hub frame, connect dialog, sizing |
+| `apps/web/app/(all)/[workspaceSlug]/(settings)/settings/(workspace)/integrations/page.tsx` | The Integrations page: the hub frame with the Plane Dark config and theme |
 | `apps/web/services/fastn.service.ts` | New: calls the endpoint |
 | `apps/web/app/routes/core.ts` | Route for the page |
 | `packages/constants/src/settings/workspace.ts`, `packages/types/src/settings.ts`, `apps/web/components/settings/workspace/sidebar/item-icon.tsx` | The **Integrations** entry in the settings menu |
