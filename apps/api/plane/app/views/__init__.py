@@ -233,6 +233,8 @@ from .webhook.base import (
     WebhookSecretRegenerateEndpoint,
 )
 
+from .fastn.base import FastnEmbedTokenEndpoint
+
 from .error_404 import custom_404_view
 
 from .notification.base import MarkAllReadNotificationViewSet

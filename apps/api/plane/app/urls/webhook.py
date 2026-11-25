@@ -8,10 +8,16 @@ from plane.app.views import (
     WebhookEndpoint,
     WebhookLogsEndpoint,
     WebhookSecretRegenerateEndpoint,
+    FastnEmbedTokenEndpoint,
 )
 
 
 urlpatterns = [
+    path(
+        "workspaces/<str:slug>/fastn/embed-token/",
+        FastnEmbedTokenEndpoint.as_view(),
+        name="fastn-embed-token",
+    ),
     path("workspaces/<str:slug>/webhooks/", WebhookEndpoint.as_view(), name="webhooks"),
     path(
         "workspaces/<str:slug>/webhooks/<uuid:pk>/",
