@@ -4,9 +4,13 @@
  * See the LICENSE file for details.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
+import { Dialog, DialogClose, DialogCloseGroup, DialogContent } from "@makeplane/propel/components/dialog";
+import { Icon } from "@makeplane/propel/components/icon";
+import { IconButton } from "@makeplane/propel/components/icon-button";
+import { CloseOutline } from "@makeplane/propel/icons";
 import { useTranslation } from "@plane/i18n";
 import { PageHead } from "@/components/core/page-title";
 import { useWorkspace } from "@/hooks/store/use-workspace";
@@ -36,10 +40,27 @@ const PLANE_DARK_THEME = {
   shadowStrength: "none",
 };
 
+// What a card asks the host to open. "standard" is the compare menu's plain-connect choice.
+type TFastnOpen = { view: string; widgetId?: string };
+
+function frameUrl(base: string, view: string, widgetId?: string): string {
+  const url = new URL(base);
+  url.searchParams.set("config", FASTN_THEME_CONFIG_ID); // "Plane Dark" iframe config in fastn; the default hub theme is untouched
+  url.searchParams.set("theme", JSON.stringify(PLANE_DARK_THEME));
+  url.searchParams.set("view", view);
+  if (widgetId) url.searchParams.set("widget-id", widgetId);
+  url.searchParams.set("auto-height", "1");
+  return url.toString();
+}
+
 function WorkspaceIntegrationsPage() {
   const { t } = useTranslation();
   const { currentWorkspace } = useWorkspace();
+  const cardsFrame = useRef<HTMLIFrameElement>(null);
+  const dialogFrame = useRef<HTMLIFrameElement>(null);
   const [frameHeight, setFrameHeight] = useState<number | null>(null);
+  const [dialogHeight, setDialogHeight] = useState<number | null>(null);
+  const [opened, setOpened] = useState<TFastnOpen | null>(null);
   const slug = currentWorkspace?.slug;
   const pageTitle = currentWorkspace?.name ? `${currentWorkspace.name} - Plane Integration` : undefined;
 
@@ -49,29 +70,49 @@ function WorkspaceIntegrationsPage() {
     revalidateOnReconnect: false,
   });
 
-  // The hub reports its content height (auto-height), so the frame never shows its own blank page.
   const frameOrigin = data?.iframe_url ? new URL(data.iframe_url).origin : null;
+
+  const closeDialog = () => {
+    setOpened(null);
+    setDialogHeight(null);
+    // A connect or disconnect in the dialog changes what the cards show.
+    if (frameOrigin) cardsFrame.current?.contentWindow?.postMessage({ type: "fastn:refresh" }, frameOrigin);
+  };
+
+  // Both frames report their content height (auto-height). The cards frame asks the host to open
+  // an app's connect step or page (fastn:open); the dialog frame asks to be dismissed (fastn:close).
   useEffect(() => {
     if (!frameOrigin) return;
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== frameOrigin || event.data?.type !== "fastn:resize") return;
-      const height = Number(event.data.payload?.height);
-      if (Number.isFinite(height) && height > 0) setFrameHeight(Math.ceil(height));
+      if (event.origin !== frameOrigin) return;
+      const { type, payload } = (event.data ?? {}) as { type?: string; payload?: Record<string, unknown> };
+      const fromCards = event.source === cardsFrame.current?.contentWindow;
+      const fromDialog = event.source === dialogFrame.current?.contentWindow;
+      if (type === "fastn:resize") {
+        const height = Math.ceil(Number(payload?.height));
+        if (!Number.isFinite(height) || height <= 0) return;
+        if (fromCards) setFrameHeight(height);
+        if (fromDialog) setDialogHeight(height);
+      } else if (type === "fastn:open" && fromCards && typeof payload?.view === "string") {
+        const view = payload.view === "standard" ? "connect" : payload.view;
+        setDialogHeight(null);
+        setOpened({ view, widgetId: typeof payload.widgetId === "string" ? payload.widgetId : undefined });
+      } else if (type === "fastn:close" && fromDialog) {
+        closeDialog();
+      }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
+    // closeDialog only reads refs and frameOrigin.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [frameOrigin]);
 
-  // Styling, sections and header come from the fastn hub settings; the frame only picks the layout.
-  const iframeSrc = useMemo(() => {
-    if (!data?.iframe_url) return null;
-    const url = new URL(data.iframe_url);
-    url.searchParams.set("config", FASTN_THEME_CONFIG_ID); // "Plane Dark" iframe config in fastn; the default hub theme is untouched
-    url.searchParams.set("theme", JSON.stringify(PLANE_DARK_THEME));
-    url.searchParams.set("view", "hub");
-    url.searchParams.set("auto-height", "1");
-    return url.toString();
-  }, [data?.iframe_url]);
+  // "cards" lists every integration (connected or not); fastn's "hub" view always opens filtered to connected apps.
+  const iframeSrc = useMemo(() => (data?.iframe_url ? frameUrl(data.iframe_url, "cards") : null), [data?.iframe_url]);
+  const dialogSrc = useMemo(
+    () => (data?.iframe_url && opened ? frameUrl(data.iframe_url, opened.view, opened.widgetId) : null),
+    [data?.iframe_url, opened]
+  );
 
   return (
     <>
@@ -90,10 +131,15 @@ function WorkspaceIntegrationsPage() {
             </p>
           ) : iframeSrc ? (
             <iframe
+              ref={cardsFrame}
               title="Integrations"
               src={iframeSrc}
               className="w-full border-0"
-              style={{ height: frameHeight ? `${frameHeight}px` : "calc(100vh - 200px)" }}
+              style={{
+                height: frameHeight ? `${frameHeight}px` : "calc(100vh - 200px)",
+                background: PLANE_DARK_THEME.background, // no white flash while the hub loads
+                colorScheme: "dark",
+              }}
               allow="clipboard-write"
             />
           ) : (
@@ -101,6 +147,38 @@ function WorkspaceIntegrationsPage() {
           )}
         </div>
       </section>
+      <Dialog
+        open={!!dialogSrc}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+      >
+        <DialogContent size="lg">
+          <DialogCloseGroup>
+            <IconButton
+              variant="ghost"
+              size="xs"
+              aria-label={t("close")}
+              icon={<Icon icon={CloseOutline} />}
+              render={<DialogClose />}
+            />
+          </DialogCloseGroup>
+          {dialogSrc ? (
+            <iframe
+              ref={dialogFrame}
+              title="Connect integration"
+              src={dialogSrc}
+              className="w-full border-0"
+              style={{
+                height: `${Math.min(dialogHeight ?? 560, 720)}px`,
+                background: PLANE_DARK_THEME.background,
+                colorScheme: "dark",
+              }}
+              allow="clipboard-write"
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
