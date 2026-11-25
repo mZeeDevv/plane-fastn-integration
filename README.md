@@ -13,7 +13,9 @@ This fork of [Plane](https://github.com/makeplane/plane) embeds the [fastn](http
 
    ![Connecting GitHub → Plane Issues Sync](docs/fastn/connect-dialog.jpg)
 
-4. Once connected, the integration runs on fastn's side. GitHub issues show up as Plane work items, Plane changes post to Slack, and so on, depending on the integration.
+4. Once connected, the integration runs on fastn's side. GitHub issues show up as Plane work items, Plane changes post to Slack, and so on, depending on the integration. With **Plane ⇄ Slack**, status changes in Plane post to your Slack channel, and `@Fastn create <title>` in Slack creates a Plane work item:
+
+   ![Plane work item updates posted to Slack by fastn](docs/fastn/slack-notifications.png)
 
 You never connect Plane itself: the first time a workspace opens Integrations, Plane connects itself for that workspace (see below).
 
