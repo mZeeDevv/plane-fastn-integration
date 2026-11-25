@@ -1,3 +1,87 @@
+# Plane + fastn integrations
+
+This fork of [Plane](https://github.com/makeplane/plane) embeds the [fastn](https://fastn.ai) integrations hub in Plane's workspace settings. Every Plane workspace gets its own place to connect apps such as GitHub and Slack and run the integrations you build in fastn (for example **GitHub → Plane Issues Sync** or **Plane ⇄ Slack**), without leaving Plane.
+
+## Using it
+
+1. Open **Workspace settings** (the workspace menu in the top-left corner, then **Settings**).
+2. Under **Developer**, choose **Integrations**. Every integration your fastn org offers is listed as a card.
+
+   ![Integrations page in Plane workspace settings](docs/fastn/integrations-page.jpg)
+
+3. Click **Connect** on a card. Plane opens fastn's connect step in a dialog: add (or pick) the account for the app, keep the setup **Active**, and click **Connect**.
+
+   ![Connecting GitHub → Plane Issues Sync](docs/fastn/connect-dialog.jpg)
+
+4. Once connected, the integration runs on fastn's side. GitHub issues show up as Plane work items, Plane changes post to Slack, and so on, depending on the integration.
+
+You never connect Plane itself: the first time a workspace opens Integrations, Plane connects itself for that workspace (see below).
+
+## How it works
+
+```
+Browser (Plane web)                 Plane API                          fastn
+-------------------                 ---------                          -----
+Settings > Integrations  --POST-->  /api/workspaces/<slug>/fastn/      POST /api/v1/embed/token
+                                    embed-token/                --->   (API key stays on the server)
+                                      |  creates the workspace's
+                                      |  fastn customer on first use
+                                      |  and saves its Plane connection --> POST /api/v1/connections
+                         <-- iframe URL with a short-lived emb_ token
+<iframe> fastn hub (cards view)
+  Connect --fastn:open--> Plane opens a dialog with the connect step
+  Close   --fastn:close-> Plane closes it and refreshes the cards
+```
+
+- **One fastn customer per Plane workspace.** It's created on the first token request (`createIfMissing`), keyed by the workspace id.
+- **The fastn API key never reaches the browser.** Plane's API mints a short-lived embed token (8 hours, refreshed inside the frame), and the page only receives the iframe URL.
+- **Plane connects itself.** The fastn integrations mark the Plane app as the partner's own product, so the end user only connects the other app. On first load, Plane creates a workspace API token labelled `fastn-integration` and saves it in fastn as that customer's Plane connection.
+- **The look comes from fastn.** The page uses a fastn iframe config ("Plane Dark") and theme tokens, so the hub matches Plane's dark UI. Restyle it in fastn's widget builder.
+
+## Setup
+
+### In fastn
+
+1. Build the integrations you want to offer (each one is a fastn widget) in your fastn org.
+2. Create an API key for the org (`fsk_...`).
+3. Note the Plane connector's id and its API-token auth method id. The connector needs a Plane API token, the workspace slug and the Plane API's base URL.
+
+### In Plane
+
+Follow Plane's own local setup below (`./setup.sh`, `docker compose -f docker-compose-local.yml up`, `pnpm dev`), then add these to `apps/api/.env` and restart the `api` container:
+
+| Variable | What it is |
+| --- | --- |
+| `FASTN_API_URL` | fastn API host, e.g. `https://api.fastn.dev` |
+| `FASTN_API_KEY` | The org's fastn API key (`fsk_...`). Server-side only |
+| `FASTN_WIDGET_ID` | Optional. Opens the hub on one integration |
+| `FASTN_PLANE_CONNECTOR_ID` | The Plane connector's id in fastn |
+| `FASTN_PLANE_AUTH_METHOD_ID` | That connector's API-token auth method id |
+| `PLANE_PUBLIC_API_URL` | A URL fastn can reach Plane's API on |
+
+fastn calls Plane's API from the internet, so `PLANE_PUBLIC_API_URL` can't be `localhost`. For local development, a quick tunnel works:
+
+```bash
+cloudflared tunnel --url http://localhost:8000
+```
+
+The quick-tunnel URL changes each time it starts. Update `PLANE_PUBLIC_API_URL` and restart the API when it does; the connection is saved again on the next page load.
+
+The `.env` files are git-ignored; keep the API key out of the repo.
+
+## What changed from upstream Plane
+
+| File | Change |
+| --- | --- |
+| `apps/api/plane/app/views/fastn/base.py` | New: the embed-token endpoint and the Plane connection setup |
+| `apps/api/plane/app/urls/webhook.py`, `apps/api/plane/app/views/__init__.py` | Route and export for the endpoint |
+| `apps/web/app/(all)/[workspaceSlug]/(settings)/settings/(workspace)/integrations/page.tsx` | The Integrations page: hub frame, connect dialog, sizing |
+| `apps/web/services/fastn.service.ts` | New: calls the endpoint |
+| `apps/web/app/routes/core.ts` | Route for the page |
+| `packages/constants/src/settings/workspace.ts`, `packages/types/src/settings.ts`, `apps/web/components/settings/workspace/sidebar/item-icon.tsx` | The **Integrations** entry in the settings menu |
+
+---
+
 <br /><br />
 
 <p align="center">
