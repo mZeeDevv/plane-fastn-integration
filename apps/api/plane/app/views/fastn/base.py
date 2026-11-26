@@ -4,6 +4,7 @@
 
 import logging
 import os
+from urllib.parse import quote
 
 import requests
 from django.core.cache import cache
@@ -54,22 +55,38 @@ def _provision_plane_connection(api_url, api_key, workspace, user):
             description="Used by fastn integrations to read and write this workspace.",
         )
 
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
+    credentials = {"apiToken": token.token, "workspaceSlug": workspace.slug, "baseUrl": public_api_url}
     resp = requests.post(
         f"{api_url}/api/v1/connections",
-        headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+        headers=headers,
         json={
             "connectorId": connector_id,
             "authMethodId": auth_method_id,
             "endOrgId": str(workspace.id),
             "name": "default",
-            "credentials": {
-                "apiToken": token.token,
-                "workspaceSlug": workspace.slug,
-                "baseUrl": public_api_url,
-            },
+            "credentials": credentials,
         },
         timeout=30,
     )
+    if resp.status_code == 409:
+        # The customer already has its Plane connection (saved with an older public URL or token):
+        # create does not overwrite it, so update its credentials in place.
+        existing = requests.get(
+            f"{api_url}/api/v1/connections",
+            headers=headers,
+            params={"connectorId": connector_id, "endOrgId": str(workspace.id)},
+            timeout=15,
+        )
+        rows = (existing.json().get("data") if existing.ok else None) or []
+        connection = next((r for r in rows if isinstance(r, dict) and r.get("name") == "default"), None)
+        if connection:
+            resp = requests.put(
+                f"{api_url}/api/v1/connections/{quote(connection['id'], safe='')}",
+                headers=headers,
+                json={"credentials": credentials},
+                timeout=30,
+            )
     if resp.status_code >= 400:
         logger.warning(
             "fastn Plane connection not saved",
